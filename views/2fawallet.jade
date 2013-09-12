@@ -19,7 +19,7 @@ body(ng-app="2fawallet")
                 td(style="text-align:center")
                     input(type="text",style="margin: 0 0 10px 0",placeholder="Name",ng-model="user.name")
                     br
-                    input(type="text",style="margin: 0 0 10px 0",placeholder="Password",ng-model="user.pw")
+                    input(type="password",style="margin: 0 0 10px 0; line-height:20px",placeholder="Password",ng-model="user.pw")
                     br
                     button.btn(ng-click="login()") Register or login
             tr(ng-show="state == 1")

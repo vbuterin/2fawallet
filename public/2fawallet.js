@@ -122,13 +122,14 @@ function TFAWalletCtrl($scope,$http) {
                 _        = console.log(tx),
                 eto      = mketo(tx, $scope.user.script);
 
+            console.log('e0',eto);
             ($scope.message || {}).body = "Signing transaction";
             var pubindex = $scope.user.pubs.indexOf($scope.user.pub);
             for (var i = 0; i < eto.inputscripts.length; i++) {
                 eto.sigs[i][pubindex] = multisign(eto.tx,i,eto.inputscripts[i],$scope.user.priv);
             }
             ($scope.message || {}).body = "Sending transaction to server for second signature";
-            console.log('e',eto);
+            console.log('e1',eto);
             return $http.post('/2fasign',{
                 name: $scope.user.name,
                 otp: $scope.sending.otp,

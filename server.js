@@ -11,6 +11,7 @@ var sx              = require('node-sx'),
     base32          = require('thirty-two'),
     notp            = require('notp'),
     async           = require('async'),
+    http            = require('http'),
     _               = require('underscore'),
     sha256          = function(x) {
                           return crypto.createHash('sha256').update(x).digest('hex') 
@@ -35,7 +36,7 @@ var port = process.env['MONGO_NODE_DRIVER_PORT'] != null
 var db = new Db('2fawal', new Server(host, port), {safe: false}, {auto_reconnect: true}, {});
 
 var mkrespcb = function(res,code,success) {
-    return eh(function(msg) { res.json(msg,code) },success);
+    return eh(function(msg) { res.json(msg,400);  },success);
 }
 
 var Twofactor,
@@ -99,18 +100,40 @@ app.use('/push',function(req,res) {
     sx.bci_pushtx(req.param('tx'),mkrespcb(res,400,_.bind(res.json,res)));
 });
 
+var hexToBytes = function(h) {
+    var b = [];
+    for (var i = 0; i < h.length; i += 2) {
+        b.push(parseInt(h.substring(i,i+2),16));
+    }
+    return b;
+}
+var bytesToHex = function(b) {
+    return b.map(function(x) { return (x < 16 ? '0' : '') + x.toString(16) }).join('');
+}
+
 app.use('/history',function(req,res) {
     console.log('grabbing',req.param('address'));
-    sx.history(req.param('address'),mkrespcb(res,400,function(h) {
-        console.log('grabbed');
-        if (req.param('unspent')) {
-            h = h.filter(function(x) { return !x.spend });
-        }
-        if (req.param('confirmations')) {
-            h = h.filter(function(x) { return x.confirmations >= parseInt(req.param('confirmations')) });
-        }
-        return res.json(h);
-    }));
+    var url = 'http://blockchain.info/unspent?active='+req.param('address');
+    http.get(url,function(o) {
+        var data = "";
+        o.on('data',function(chunk) { data += chunk; });
+        o.on('error',function(e) { res.json(e,400) });
+        o.on('end',function() {
+            try {
+                var obj = JSON.parse(data.replace('\n',''));
+                var utxo = obj.unspent_outputs.map(function(o) {
+                    var hash = bytesToHex(hexToBytes(o.tx_hash).reverse());
+                    return {
+                        value: o.value,
+                        output: hash+":"+o.tx_output_n
+                    }
+                });
+                console.log('grabbed');
+                res.json(utxo);
+            }
+            catch(e) { res.json(e,400); }
+        });
+    }).on('error',function(e) { res.json(e,400) });
 });
 
 var b32_alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';

@@ -152,18 +152,14 @@ var validate_input = function(tx,i,script,sig,pub) {
                                       Crypto.util.hexToBytes(pub));
 }
 
-// FSM I hate little endian hashes...
-var reverse = function(arr) {
-    var o = [];
-    for (var i = arr.length - 1; i >= 0; i--) o.push(arr[i]);
-    return o;
-}
+// Makes a new transaction given inputs and outputs
 
 var mktx = function(inputs,outputs,cb) {
     var tx = new Bitcoin.Transaction();
     inputs.map(function(i) {
         var hbytes = Crypto.util.hexToBytes(i.output.substring(0,64));
-        tx.addInput({ hash: Crypto.util.bytesToBase64(reverse(hbytes)) },
+                                                      // FSM I hate little endian hashes...
+        tx.addInput({ hash: Crypto.util.bytesToBase64(hbytes.reverse()) },
                       parseInt(i.output.substring(65)));
     });
     outputs.map(function(o) {
@@ -180,7 +176,7 @@ var mktx = function(inputs,outputs,cb) {
     });
     console.log(tx);
     var otx = Crypto.util.bytesToHex(tx.serialize());
-    console.log('Made signature: ',otx);
+    console.log('Made transaction: ',otx);
     return cb ? cb(otx) : otx;
 }
 

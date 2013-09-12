@@ -72,7 +72,7 @@
     top: -4px;
 }
 
-input[type='text'] {
+input[type='text'], input[type='password'] {
     height: 25px !important;
     word-wrap: break-word;
     margin-right: 5%;
