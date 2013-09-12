@@ -1,0 +1,26 @@
+{
+    "name": "2fawallet",
+    "version": "0.0.1",
+    "description": "Two-factor authentication wallet",
+    "dependencies": {
+        "underscore": "*",
+        "async": "*",
+        "long-stack-traces": "*",
+        "crypto": "*",
+        "express": "3.1.0",
+        "thirty-two": "*",
+        "jade": "*",
+        "notp": "*",
+        "mongodb": ">= 0.9.6-7",
+        "node-sx": "https://github.com/vbuterin/node-sx/tarball/master",
+        "bitcoinjs-lib": "https://github.com/bitfloor/bitcoinjs-lib/tarball/master"
+    },
+    "main": "main.js",
+    "author": "vbuterin",
+    "keywords": ["bitcoin", "crypto", "finance"],
+    "repository" : {                                                                      
+         "type": "git",                                                                    
+         "url": "https://github.com/vbuterin/2fawallet.git"                                     
+    },
+    "engines": { "node": "*" }
+}

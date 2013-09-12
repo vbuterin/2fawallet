@@ -1,0 +1,58 @@
+head
+    script(src="angular.min.js")
+    script(src="underscore-min.js")
+    script(src="qrcode.js")
+    script(src="bitcoinjs-min.js")
+    script(src="bitcoinjs-wrapper.js")
+    script(src="2fawallet.js")
+    link(rel="stylesheet",type="text/css",href="main.css")
+    link(rel="stylesheet",type="text/css",href="bootstrap.min.css")
+body(ng-app="2fawallet")
+    center(style="width:100%",ng-controller="TFAWalletCtrl")
+        table(style="margin:100px 0px",cellpadding="20px")
+            tr
+                td.blue.bigpill.largetext(ng-show="!state") Welcome to Egora Multiwallet
+                td.grey.bigpill.largetext(ng-show="state == 1") Take a screenshot of this page and/or copy down your backup key! This is the only time you will ever see this information.
+                td.grey.bigpill.largetext(ng-show="state == 2") Scan the QR code with your Google Authenticator app
+                td.blue.bigpill.verylargetext(ng-show="state == 3") {{ balance }}
+            tr(ng-show="!state")
+                td(style="text-align:center")
+                    input(type="text",style="margin: 0 0 10px 0",placeholder="Name",ng-model="user.name")
+                    br
+                    input(type="text",style="margin: 0 0 10px 0",placeholder="Password",ng-model="user.pw")
+                    br
+                    button.btn(ng-click="login()") Register or login
+            tr(ng-show="state == 1")
+                td(style="text-align:center")
+                    div#qr1
+                    br    
+                    center {{ user.bkpriv }}
+                    br
+                    button.btn.raise4(ng-click="confirmSavedBackup()") I saved it
+            tr(ng-show="state == 2")
+                td(style="text-align:center")
+                    div#qr2
+                    br   
+                    center {{ user.tfakey }}
+                    br
+                    input(type="text",placeholder="Authentication code",ng-model="otp")
+                    button.btn.raise4(ng-click="confirmOTP()") Confirm
+            tr(ng-show="state == 3")
+                td(style="text-align:center")
+                    div(style="font-size:150%") {{ user.address }}
+                    br
+                    input(type="text",placeholder="Address",ng-model="sending.to")
+                    br
+                    input(type="text",placeholder="Value",ng-model="sending.value")
+                    br
+                    input(type="text",placeholder="Authentication code",ng-model="sending.otp")
+                    br
+                    button.btn(ng-click="send()",ng-disabled="!balance") Send   
+        .modal(ng-show="message.body || message.title")
+            .modal-header {{ message.title }}
+                span(style="float:right",ng-click="message = null") x
+            .modal-body(style="text-align:justify") {{ message.body }}
+                img(style="float:right",ng-show="message.loading",src="inprogress.gif")
+            .modal-footer
+                button.btn(ng-show="message.actiontext",ng-click="message.action()") {{ message.actiontext }}
+                button.btn(ng-click="message = null") Close
