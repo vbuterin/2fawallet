@@ -120,7 +120,11 @@ app.use('/history',function(req,res) {
         o.on('error',function(e) { res.json(e,400) });
         o.on('end',function() {
             try {
-                var obj = JSON.parse(data.replace('\n',''));
+                if (data == "No free outputs to spend") {
+                    console.log('grabbed');
+                    return res.json([]);
+                }
+                var obj = JSON.parse(data);
                 var utxo = obj.unspent_outputs.map(function(o) {
                     var hash = bytesToHex(hexToBytes(o.tx_hash).reverse());
                     return {
