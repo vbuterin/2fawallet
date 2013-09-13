@@ -156,6 +156,24 @@ var verifykey = function(otp,key) {
     return notp.totp.verify(otp,binkey,{ window: 1 }); 
 }
 
+var verifyrequest = function(req,key) {
+    var obj = _.clone(req.query || req.body);
+    var sig = obj.sig;
+    delete obj.sig;
+    var keys = [];
+    var smartEncode = function(x) {
+        return encodeURIComponent(
+            (typeof x == "string" || typeof x == "number") ? x : JSON.stringify(x)
+        );
+    }
+    for (var v in obj) keys.push(v);
+    keys.sort();
+    var s = keys.reduce(function(s,k) {
+        return s + '?' + smartEncode(k) + '=' + smartEncode(obj[k])
+    },url);
+    return Bitcoin.ECDSA.verify(hexToBytes(z),hexToBytes(sig),hexToBytes(pub));
+}
+
 app.use('/changesecret',function(req,res) {
     var timestamp = req.param("timestamp"),
         sig = req.param("sig"),
@@ -168,7 +186,9 @@ app.use('/changesecret',function(req,res) {
     }
     Twofactor.findOne({ name: name },eh(cb,function(tf) {
         var v = [0,1,2].map(function(i) {
-            return Bitcoin.ECDSA.Verify(sha256(timestamp+newkey),sig,tf.addrdata.pubs[i])
+            return Bitcoin.ECDSA.Verify(Crypto.util.hexToBytes(sha256(timestamp+newkey)),
+                                        sig,
+                                        Crypto.util.hexToBytes(addrdata.pubs[i]));
         });
         if (!v[0] && !v[1] && !v[2]) return res.json("Invalid signature",400);
         if (oldkey != tf.key) return res.json("Incorrect auth secret",400);
@@ -283,6 +303,11 @@ app.use('/2fasign',function(req,res) {
         else if (!verifykey(otp,tf.key)) {
             res.json("Verification failed",400);
         }
+        /*else if (!verifyrequest(req,tf.addrdata.pubs[0]) &&
+                 !verifyrequest(req,tf.addrdata.pubs[1]) &&
+                 !verifyrequest(req,tf.addrdata.pubs[2])) {
+            res.json("Signature validation failed");
+        }*/
         else {
             async.waterfall([function(cb) {
                 if (eto_object) {

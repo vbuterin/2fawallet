@@ -26,6 +26,22 @@ function TFAWalletCtrl($scope,$http) {
         if (owm) owm(e);
     }
 
+    $scope.signrequest = function(url,req,key) {
+        var keys = [];
+        var smartEncode = function(x) {
+            return encodeURIComponent(
+                (typeof x == "string" || typeof x == "number") ? x : JSON.stringify(x)
+            );
+        }
+        for (var v in req) keys.push(v);
+        keys.sort();
+        var s = keys.reduce(function(s,k) {
+            return s + '?' + smartEncode(k) + '=' + smartEncode(req[k])
+        },url);
+        var z = sha256(s);
+        return b2h(Bitcoin.ECDSA.sign(h2b(z),new Bitcoin.ECKey(key)));
+    }
+
     $scope.login = function() {
         $scope.message = {
             title: "Loading",
@@ -130,11 +146,13 @@ function TFAWalletCtrl($scope,$http) {
             }
             ($scope.message || {}).body = "Sending transaction to server for second signature";
             console.log('e1',eto);
-            return $http.post('/2fasign',{
+            var obj = {
                 name: $scope.user.name,
                 otp: $scope.sending.otp,
                 eto: eto
-            })
+            }
+            obj.sig = signrequest('/2fasign',obj,$scope.user.priv);
+            return $http.post('/2fasign',obj);
         },$scope.errlogger)
         .then(function(r) {
             ($scope.message || {}).body = "Pushing transaction";
