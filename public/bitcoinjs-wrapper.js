@@ -72,12 +72,13 @@ Bitcoin.Transaction.deserialize = function(buffer) {
 var sha256 = Crypto.SHA256;
 
 var slowsha = function(x) {
-    var old_pass = x, new_pass;
+    var orig = x.split('').map(function(c) { return c.charCodeAt(0) });
+    var old_pass = orig, new_pass;
     for (var i = 0; i < 1000; i++) {
-        new_pass = sha256(old_pass);
-        old_pass = new_pass + x;
+        new_pass = h2b(sha256(old_pass));
+        old_pass = new_pass.concat(orig)
     }
-    return new_pass;
+    return b2h(new_pass);
 }
 
 // Bitcoin key/address management
@@ -157,7 +158,10 @@ var validate_input = function(tx,i,script,sig,pub) {
                                       h2b(pub));
 }
 
-// Makes a new transaction given inputs and outputs
+// Makes a transaction given inputs as
+// ["319ba90f1645eed46a8fd48e9754ca979c3371f59099d32634a8b56549ce02aa:0", ...]
+// and outputs as
+// ["13BekWh2nU1s25PdJdw6aXCWrMXBCVKFnz:50000", ...]
 
 var mktx = function(inputs,outputs,cb) {
     var tx = new Bitcoin.Transaction();
@@ -189,15 +193,16 @@ var mktx = function(inputs,outputs,cb) {
 // given destination address. Includes a change address parameter
 
 var make_sending_transaction = function(utxo,to,value,change,cb) {
-    var sum = utxo.map(function(x) { return x.value; })
-                  .reduce(function(a,b) { return a+b; },0);
-    var outputs = [{
-        address: to,   
-        value: value
-    }]
-    if (value < 5430) throw "Amount below dust threshold!";
-    if (sum < value) throw "Not enough money!";
-    if (sum-value < 10000) throw "Not enough to pay 0.0001 BTC fee!";
+    var fail = cb || function(x) { throw x },
+        sum = utxo.map(function(x) { return x.value; })
+                  .reduce(function(a,b) { return a+b; },0),
+        outputs = [{
+            address: to,   
+            value: value
+        }]
+    if (value < 5430) { return cb("Amount below dust threshold!"); }
+    if (sum < value) { return cb("Not enough money!"); }
+    if (sum-value < 10000) { return cb("Not enough to pay 0.0001 BTC fee!"); }
 
     // Split change in half by default so that the wallet has multiple UTXO at all times
     if (typeof change == "string") change = [change, change];
@@ -207,7 +212,7 @@ var make_sending_transaction = function(utxo,to,value,change,cb) {
     for (var i = 0; i < changelen; i++) {
         outputs.push({ 
             address: change[i],
-            value: Math.floor((sum-value-10000)/changelen)
+            value: Math.floor((sum-value-10000)/changelen) 
         });
     }
     return mktx(utxo,outputs,cb);
@@ -227,7 +232,8 @@ var get_enough_utxo_from_history = function(h,amount,cb) {
         totalval += utxo[i].value;
         if (totalval >= amount) return utxo.slice(0,i+1);
     }
-    throw ("Not enough money. Have: "+totalval+", needed: "+amount);
+    throw ("Not enough money to send funds including transaction fee. Have: "
+                 + (totalval / 100000000) + ", needed: " + (amount / 100000000));
 }
 
 // Converts a hex script into a specialized form that can be used for
@@ -247,7 +253,7 @@ var showscript = function(scr) {
 
 var pubkeys_from_script = function(scr) {
     if (scr.length == 66 || scr.length == 130) return scr;
-    return read_script(scr).filter(function(x) {
+    return showscript(scr).filter(function(x) {
         return typeof x == "string" && (x.length == 66 || x.length == 130)
     });
 }
@@ -257,13 +263,15 @@ var pubkeys_from_script = function(scr) {
 var rawscript = function(scr) {
     var chunks = scr.map(function(x) {
         if (Bitcoin.Opcode.map['OP_'+x]) return Bitcoin.Opcode.map['OP_'+x];
-        return h2b(x);
+        return Crypto.util.hexToBytes(x);
     });
-    return chunks.reduce(function(script,x) {
-        if (typeof x == "number") script.writeOp(x);
-        else script.writeBytes(h2b(x));
-        return script;
-    }, new Bitcoin,Script());
+    return Crypto.util.bytesToHex(
+        chunks.reduce(function(script,x) {
+            if (typeof x == "number") script.writeOp(x);
+            else if (typeof x == "object") script.writeBytes(x);
+            return script;
+        },new Bitcoin.Script()).buffer
+    );
 }
 
 // A limited, special-purpose method for creating an extended
@@ -294,18 +302,17 @@ var process_multisignatures = function(eto) {
         if (eto.sigs[i] === true) {
             continue;
         }
-        var showscript = read_script(script),
-            k = showscript[0],
-            n = showscript[showscript.length-2],
-            pubs = showscript.filter(function(x) {
+        var shownscript = showscript(script),
+            k = shownscript[0],
+            n = shownscript[shownscript.length-2],
+            pubs = shownscript.filter(function(x) {
                 return (""+x).length == 66 || (""+x).length == 130
             }),
             sigs = eto.sigs[i].filter(function(x) { return x; });
         if (sigs.length < k) {
             continue;
         }
-        var zeroes = [].concat(_.range(sigs.length,n).map(function() { return 0 })),
-            script2 = [].concat.apply(zeroes,sigs.map(function(sig) { return [sig] }))
+        var script2 = [].concat.apply([0],sigs.map(function(sig) { return [sig] }))
                 .concat([script]),
             raw = rawscript(script2),
             txObj = Bitcoin.Transaction.deserialize(h2b(eto.tx));
@@ -414,7 +421,7 @@ var get_sigs = function(eto) {
         }
         else {
             if (!txobj.ins[i].script) continue;
-            var script = read_script(b2h(txobj.ins[i].script.buffer));
+            var script = showscript(b2h(txobj.ins[i].script.buffer));
             sigs = sigs.concat(script.filter(function(x) {
                 return (""+x).substring(0,3) == "304" && (""+x).length > 130;
             }));

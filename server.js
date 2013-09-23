@@ -1,4 +1,4 @@
-var sx              = require('node-sx'),
+var sx              = require('../node-sx'),
     eto             = sx.eto,
     Db              = require('mongodb').Db,
     Connection      = require('mongodb').Connection,
@@ -13,18 +13,33 @@ var sx              = require('node-sx'),
     async           = require('async'),
     http            = require('http'),
     _               = require('underscore'),
-    sha256          = function(x) {
-                          return crypto.createHash('sha256').update(x).digest('hex') 
-                      },
-    slowsha         = function(x,rounds) {
-                          var old_pass = x, new_pass;
-                          for (var i = 0; i < (rounds || 1000); i++) {
-                              new_pass = sha256(old_pass);
-                              old_pass = new_pass + x;
-                          }
-                          return new_pass;
-                      },
     eh              = sx.eh;
+
+var hexToBytes = function(h) {
+    var b = [];
+    for (var i = 0; i < h.length; i += 2) {
+        b.push(parseInt(h.substring(i,i+2),16));
+    }
+    return b;
+}
+
+var bytesToHex = function(b) {
+    return b.map(function(x) { return (x < 16 ? '0' : '') + x.toString(16) }).join('');
+}
+
+var sha256 = function(x) {
+    return crypto.createHash('sha256').update(x).digest('hex') 
+}
+
+var slowsha = function(x,rounds) {
+    var old_pass = x, new_pass;
+    for (var i = 0; i < (rounds || 1000); i++) {
+        new_pass = hexToBytes(sha256(old_pass))
+                       .map(function(x) { return String.fromCharCode(x) }).join('');
+        old_pass = new_pass + x;
+    }
+    return bytesToHex(new_pass.split('').map(function(x) { return x.charCodeAt(0) }));
+}
 
 var host = process.env['MONGO_NODE_DRIVER_HOST'] != null 
         ? process.env['MONGO_NODE_DRIVER_HOST'] 
@@ -74,6 +89,36 @@ var random = function(modulus) {
            },0);
 }
 
+var txpool = [];
+
+setInterval(function() {
+    console.log('Broadcasting',txpool);
+    var fail = function(){};
+    sx.cbmap(txpool,function(tx,cb2) {
+        /*sx.validtx(tx,eh(fail,function(result) {
+            if (result == "Spent input not found" || 
+                result == "Double spend of input" ||
+                result == "Matching previous object found") {
+                    return cb2(null,tx);
+            }
+            else {
+                return cb2(null,null);
+            }
+        }));*/
+        //sx.broadcast(tx,function(){});
+        sx.blke_fetch_transaction(tx,function(err,result) {
+            if (err) return cb2(null,null)
+            else return cb2(null,tx)
+        });
+        sx.bci_pushtx(tx,function(){});
+        sx.electrum_pushtx(tx,function(){});
+    },eh(fail,function(badtxs) {
+        var obj = {};
+        badtxs.map(function(b) { obj[b] = true });
+        txpool = txpool.filter(function(tx) { !obj[tx] });
+    }));
+},30000);
+
 var app = express();
 
 app.configure(function(){                                                                 
@@ -96,48 +141,22 @@ app.use('/acctexists',function(req,res) {
 });
 
 app.use('/push',function(req,res) {
-    console.log('pushing',req.param('tx'));
-    sx.bci_pushtx(req.param('tx'),mkrespcb(res,400,_.bind(res.json,res)));
+    var tx = req.param('tx');
+    console.log('pushing',tx);
+    var cb = _.once(mkrespcb(res,400,_.bind(res.json,res)));
+    txpool.push(tx);
+    //sx.bci_pushtx(tx,cb);
+    //sx.broadcast(tx,cb);
+    sx.electrum_pushtx(tx,cb);
 });
 
-var hexToBytes = function(h) {
-    var b = [];
-    for (var i = 0; i < h.length; i += 2) {
-        b.push(parseInt(h.substring(i,i+2),16));
-    }
-    return b;
-}
-var bytesToHex = function(b) {
-    return b.map(function(x) { return (x < 16 ? '0' : '') + x.toString(16) }).join('');
-}
-
 app.use('/history',function(req,res) {
-    console.log('grabbing',req.param('address'));
-    var url = 'http://blockchain.info/unspent?active='+req.param('address');
-    http.get(url,function(o) {
-        var data = "";
-        o.on('data',function(chunk) { data += chunk; });
-        o.on('error',function(e) { res.json(e,400) });
-        o.on('end',function() {
-            try {
-                if (data == "No free outputs to spend") {
-                    console.log('grabbed');
-                    return res.json([]);
-                }
-                var obj = JSON.parse(data);
-                var utxo = obj.unspent_outputs.map(function(o) {
-                    var hash = bytesToHex(hexToBytes(o.tx_hash).reverse());
-                    return {
-                        value: o.value,
-                        output: hash+":"+o.tx_output_n
-                    }
-                });
-                console.log('grabbed');
-                res.json(utxo);
-            }
-            catch(e) { res.json(e,400); }
-        });
-    }).on('error',function(e) { res.json(e,400) });
+    var address = req.param('address');
+    console.log('grabbing',address);
+    sx.bci_history(address,mkrespcb(res,400,function(h) {
+        console.log('grabbed '+h.length+' items');
+        res.json(h);
+    }));
 });
 
 var b32_alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -156,9 +175,9 @@ var verifykey = function(otp,key) {
     return notp.totp.verify(otp,binkey,{ window: 1 }); 
 }
 
-var verifyrequest = function(req,key) {
-    var obj = _.clone(req.query || req.body);
-    var sig = obj.sig;
+var verifyrequest = function(req,pub) {
+    var obj = _.extend(_.clone(req.query),req.body);
+    var sig = ""+obj.sig;
     delete obj.sig;
     var keys = [];
     var smartEncode = function(x) {
@@ -170,8 +189,9 @@ var verifyrequest = function(req,key) {
     keys.sort();
     var s = keys.reduce(function(s,k) {
         return s + '?' + smartEncode(k) + '=' + smartEncode(obj[k])
-    },url);
-    return Bitcoin.ECDSA.verify(hexToBytes(z),hexToBytes(sig),hexToBytes(pub));
+    },req.originalUrl);
+    var z = sha256(s);
+    return Bitcoin.ecdsa.verify(hexToBytes(z),hexToBytes(sig),hexToBytes(pub));
 }
 
 app.use('/changesecret',function(req,res) {
@@ -268,27 +288,34 @@ app.use('/validate',function(req,res) {
 app.use('/admin',function(req,res) {
     var pw = req.param('pw'),
         priv = req.param('priv'),
+        user = req.param('user') || "",
+        pass = req.param('pass') || "",
+        sep  = (user && pass) ? ":" : "",
         read = req.param('read');
     if (!pw) {
         return res.json("No password provided",403);
     }
-    if (slowsha(pw,10000) != 'd82477f0daac66f152012dd14d63000d5cd63eb4ad9f7e760e492e3cf49be7d4') {
+    if (slowsha(pw) != '2fbdbaea615b349feb2620c84dae54dc38798df2c9d52f1520b50d846135826c') {
         return res.json("Bad password",403);
     }
     if (read) {
         Config.findOne({},mkrespcb(res,400,_.bind(res.json,res)));
     }
-    sx.gen_addr_data(priv,mkrespcb(res,400,function(addrdata) {
+    async.waterfall([function(cb) {
+        if (priv) cb(null,priv);
+        else sx.base58check_encode(slowsha(user+sep+pass),128,cb);
+    },
+    sx.gen_addr_data,
+    function(addrdata,cb) {
         config.priv = addrdata.priv;
         config.pub = addrdata.pub;
         Config.findOne({},mkrespcb(res,400,function(c) {
-            var cb = mkrespcb(res,400,_.bind(res.json,res));
             if (!c) { Config.insert(config,cb) }
             else { 
                 Config.update({},config,cb);
             }
         }));
-    }));
+    }],mkrespcb(res,400,_.bind(res.json,res)));
 });
 
 app.use('/2fasign',function(req,res) {
@@ -296,6 +323,7 @@ app.use('/2fasign',function(req,res) {
         otp = req.param("otp"),
         tx = req.param("tx"),
         eto_object = req.param("eto");
+    console.log('signing',eto_object.tx || tx);
     Twofactor.findOne({ name: name },mkrespcb(res,400,function(tf) {
         if (!tf) { 
             res.json("Name not found",400);
@@ -303,11 +331,11 @@ app.use('/2fasign',function(req,res) {
         else if (!verifykey(otp,tf.key)) {
             res.json("Verification failed",400);
         }
-        /*else if (!verifyrequest(req,tf.addrdata.pubs[0]) &&
+        else if (!verifyrequest(req,tf.addrdata.pubs[0]) &&
                  !verifyrequest(req,tf.addrdata.pubs[1]) &&
                  !verifyrequest(req,tf.addrdata.pubs[2])) {
             res.json("Signature validation failed");
-        }*/
+        }
         else {
             async.waterfall([function(cb) {
                 if (eto_object) {
