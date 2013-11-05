@@ -10,10 +10,11 @@
         "express": "3.1.0",
         "thirty-two": "*",
         "jade": "*",
+        "bitcoin": "*",
         "notp": "*",
         "mongodb": ">= 0.9.6-7",
         "node-sx": "https://github.com/vbuterin/node-sx/tarball/master",
-        "bitcoinjs-lib": "https://github.com/bitfloor/bitcoinjs-lib/tarball/master"
+        "bitcoinjs-lib": "https://github.com/vbuterin/bitcoinjs-lib/tarball/master"
     },
     "main": "main.js",
     "author": "vbuterin",

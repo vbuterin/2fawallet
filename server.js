@@ -7,13 +7,24 @@ var sx              = require('../node-sx'),
     ObjectID        = require('mongodb').ObjectID,
     express         = require('express'),
     Bitcoin         = require('bitcoinjs-lib'),
+    cp              = require('child_process'),
     crypto          = require('crypto'),
     base32          = require('thirty-two'),
     notp            = require('notp'),
     async           = require('async'),
     http            = require('http'),
+    bitcoind        = require('bitcoin'),
     _               = require('underscore'),
     eh              = sx.eh;
+
+var pybtctool = function(command, argz) {
+    var cb = arguments[arguments.length - 1]
+        args = Array.prototype.slice.call(arguments,1,arguments.length-1)
+                    .map(function(x) { 
+                        return (''+x).replace('\\','\\\\').replace(' ','\\ ')
+                     })
+    cp.exec('pybtctool '+command+' '+args.join(' '),cb);
+}
 
 var hexToBytes = function(h) {
     var b = [];
@@ -89,36 +100,6 @@ var random = function(modulus) {
            },0);
 }
 
-var txpool = [];
-
-setInterval(function() {
-    console.log('Broadcasting',txpool);
-    var fail = function(){};
-    sx.cbmap(txpool,function(tx,cb2) {
-        /*sx.validtx(tx,eh(fail,function(result) {
-            if (result == "Spent input not found" || 
-                result == "Double spend of input" ||
-                result == "Matching previous object found") {
-                    return cb2(null,tx);
-            }
-            else {
-                return cb2(null,null);
-            }
-        }));*/
-        //sx.broadcast(tx,function(){});
-        sx.blke_fetch_transaction(tx,function(err,result) {
-            if (err) return cb2(null,null)
-            else return cb2(null,tx)
-        });
-        sx.bci_pushtx(tx,function(){});
-        sx.electrum_pushtx(tx,function(){});
-    },eh(fail,function(badtxs) {
-        var obj = {};
-        badtxs.map(function(b) { obj[b] = true });
-        txpool = txpool.filter(function(tx) { !obj[tx] });
-    }));
-},30000);
-
 var app = express();
 
 app.configure(function(){                                                                 
@@ -143,17 +124,16 @@ app.use('/acctexists',function(req,res) {
 app.use('/push',function(req,res) {
     var tx = req.param('tx');
     console.log('pushing',tx);
-    var cb = _.once(mkrespcb(res,400,_.bind(res.json,res)));
-    txpool.push(tx);
-    //sx.bci_pushtx(tx,cb);
-    //sx.broadcast(tx,cb);
-    sx.electrum_pushtx(tx,cb);
+    var success = _.once(function(x) { console.log(x); res.json(x); });
+    var fail = function(x) { console.log(x) }
+    pybtctool('eligius_pushtx',tx,eh(success,fail));
 });
 
 app.use('/history',function(req,res) {
     var address = req.param('address');
     console.log('grabbing',address);
-    sx.bci_history(address,mkrespcb(res,400,function(h) {
+    pybtctool('history',address,mkrespcb(res,400,function(h) {
+        h = JSON.parse(h);
         console.log('grabbed '+h.length+' items');
         res.json(h);
     }));

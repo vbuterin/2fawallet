@@ -59,7 +59,7 @@ function TFAWalletCtrl($scope,$http) {
         console.log('k',key,'s',s);
         var z = sha256(s);
         console.log(z);
-        return b2h(new Bitcoin.ECKey(key).sign(h2b(z)));
+        return b2h(new Bitcoin.Key(key).sign(h2b(z)));
     }
 
     $scope.login = function() {
@@ -73,12 +73,12 @@ function TFAWalletCtrl($scope,$http) {
         setTimeout(function(){
             // Primary private key (username+password derived)
             var seed = $scope.user.name + ":" + $scope.user.pw;
-            $scope.user.priv = base58checkEncode(slowsha(seed),128);
+            $scope.user.priv = Bitcoin.base58.checkEncode(h2b(slowsha(seed)),128);
             $scope.user.pub = privtopub($scope.user.priv);
     
             // Backup private key (randomly generated)
             var rndseed = ""+new Date().getTime()+Math.random()+entropy;
-            $scope.user.bkpriv = base58checkEncode(sha256(rndseed),128);
+            $scope.user.bkpriv = Bitcoin.base58.checkEncode(h2b(sha256(rndseed)),128);
             $scope.user.bkpub = privtopub($scope.user.bkpriv);
     
             ($scope.message || {}).body = "Registering account";
@@ -165,7 +165,7 @@ function TFAWalletCtrl($scope,$http) {
                 }
                 else break;
             }
-            $scope.eto      = mketo(tx, $scope.user.script);
+            $scope.eto = mketo(b2h(tx.serialize()), $scope.user.script);
 
             $scope.usedutxo = utxo;
             $scope.usedutxo.map(function(x) { x.timestamp = new Date().getTime() });
@@ -197,8 +197,9 @@ function TFAWalletCtrl($scope,$http) {
         },$scope.errlogger)
         .then(function(r) {
             console.log('Success',r.data);
-            var txhash = sha256(Crypto.util.hexToBytes($scope.eto.tx));
-            ($scope.message || {}).body = strim(r.data) || txhash;
+            var txhash = sha256(Bitcoin.convert.hexToBytes($scope.eto.tx));
+            var hashes = /[0-9a-fA-F]{64}/.exec(r.data)
+            ($scope.message || {}).body = hashes ? hashes[0] : txhash;
             ($scope.message || {}).loading = false;
             $scope.waiting = $scope.waiting.concat($scope.usedutxo || []);
             $scope.usedutxo = [];
@@ -224,8 +225,8 @@ function TFAWalletCtrl($scope,$http) {
                                           .reduce(function(a,b) { return a+b; },0);
                 var ncf_satoshis = $scope.waiting.map(function(x) { return x.value; })
                                           .reduce(function(a,b) { return a+b; },0);
-                $scope.balance = Math.floor(satoshis / 1000) / 100000;
-                $scope.ncf_balance = Math.floor(ncf_satoshis / 1000) / 100000;
+                $scope.balance = Math.floor(satoshis / 1000) * 1000;
+                $scope.ncf_balance = Math.floor(ncf_satoshis / 1000) * 1000;
 
             },function(){});
     }

@@ -15,8 +15,8 @@ body(ng-app="2fawallet")
                 td.grey.bigpill.largetext(ng-show="state == 1") Take a screenshot of this page and/or copy down your backup key! This is the only time you will ever see this information.
                 td.grey.bigpill.largetext(ng-show="state == 2") Scan the QR code with your Google Authenticator app
                 td.blue.bigpill.verylargetext(ng-show="state == 3")
-                    div {{ balance + ncf_balance }}
-                    div.largetext(style="color:#a00",ng-show="ncf_balance") ({{ balance }} spendable)
+                    div {{ (balance + ncf_balance) / 100000000 }}
+                    div.largetext(style="color:#a00",ng-show="ncf_balance") ({{ balance / 100000000 }} spendable)
                     div.largetext(style="color:#a00",ng-show="balance != 0 && !balance") Loading balance...
             tr(ng-show="!state")
                 td(style="text-align:center")
