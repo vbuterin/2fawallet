@@ -7,7 +7,7 @@
         "async": "*",
         "long-stack-traces": "*",
         "crypto": "*",
-        "express": "3.1.0",
+        "express": "4.19.2",
         "thirty-two": "*",
         "jade": "*",
         "bitcoin": "*",
